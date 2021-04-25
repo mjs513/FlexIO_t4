@@ -43,15 +43,23 @@ public:
 	virtual bool call_back (FlexIOHandler *pflex) = 0;
 };
 
+// Note: T4.x Param data does not match RM. 
+// PARAM:2200808
 class FlexIOHandler {
 public:
-	static const uint8_t CNT_SHIFTERS = 4;
-#if defined(__IMXRT1062__)
-	static const uint8_t CNT_FLEX_PINS = 14;
+	static const uint8_t CNT_SHIFTERS = 8;
+	static const uint8_t CNT_TIMERS = 8;
+#if defined(ARDUINO_TEENSY41)
+	static const uint8_t CNT_FLEX_PINS = 22;
+	static const uint8_t CNT_FLEX_IO_OBJECT = 3;
+#elif defined(ARDUINO_TEENSY_MICROMOD)
+	static const uint8_t CNT_FLEX_PINS = 15;
 	static const uint8_t CNT_FLEX_IO_OBJECT = 3;
 #else
-	static const uint8_t CNT_FLEX_PINS = 9;
-	static const uint8_t CNT_FLEX_IO_OBJECT = 2;
+	// T4
+	static const uint8_t CNT_FLEX_PINS = 14;
+	static const uint8_t CNT_FLEX_IO_OBJECT = 3;
+	static const uint8_t CNT_TIMERS = 8
 #endif
 	typedef struct {
 		volatile uint32_t &clock_gate_register;
@@ -66,9 +74,7 @@ public:
 
 	static const FLEXIO_Hardware_t flex1_hardware;
 	static const FLEXIO_Hardware_t flex2_hardware;
-#if defined(__IMXRT1062__)
 	static const FLEXIO_Hardware_t flex3_hardware;
-#endif
 
   constexpr FlexIOHandler(uintptr_t myport, uintptr_t myhardware, uintptr_t callback_list)
   	: port_addr(myport), hardware_addr(myhardware), _callback_list_addr(callback_list) {
