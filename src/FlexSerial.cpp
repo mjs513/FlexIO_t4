@@ -21,6 +21,8 @@
 bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 	// BUGBUG - may need to actual Clocks to computer baud...
 	uint16_t baud_div =  (FLEXIO1_CLOCK/baud)/2 - 1;                                   
+
+
 	//-------------------------------------------------------------------------
 	// TX Pin setup - if requested
 	//-------------------------------------------------------------------------
@@ -28,15 +30,29 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 		if (_tx_pflex != nullptr)  {
 			_tx_flex_pin = _tx_pflex->mapIOPinToFlexPin(_txPin);
 			if (_tx_flex_pin == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to map TX pin %d to FlexIO\n", _txPin);
 				return false;
+#endif
 			}
 		} else {
 			_tx_pflex = FlexIOHandler::mapIOPinToFlexIOHandler(_txPin, _tx_flex_pin);
 			if (_tx_pflex == nullptr) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to map TX pin %d to FlexIO\n", _txPin);
+#endif
 				return false;
 			}
+			// See if we can cmpute based off of Actual setting CCM clock settings
+			uint32_t clock_speed = _tx_pflex->computeClockRate() / 2;   // get speed divide by 
+			baud_div = clock_speed / baud;
+			if (baud_div > 256) baud_div = 256;
+			uint32_t effective_baud_above = clock_speed / baud_div;
+			uint32_t effective_baud_below = clock_speed / (baud_div + 1);
+			if ((baud_div == 256) || ((effective_baud_above - baud) <= (baud - effective_baud_below))) baud_div -= 1;
+#ifdef DEBUG_FlexSerial
+			Serial.printf("FlexSerial::begin(%u) - %u %u (%u %u)\n", baud, clock_speed, baud_div, effective_baud_below, effective_baud_above);
+#endif
 
 		}
 		// BUGBUG need to handle restarts...
@@ -50,25 +66,33 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 #endif		
 		if (_tx_timer <= 3) {
 			if (!_tx_pflex->claimTimer(_tx_timer)) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to claim TX timer(%d)\n", _tx_timer);
+#endif
 				return false;
 			}
 		} else {
 			_tx_timer = _tx_pflex->requestTimers();
 			if (_tx_timer == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to allocate TX timer(%d)\n", _tx_timer);
+#endif
 				return false;
 			}
 		}
 		if (_tx_shifter <= 3) {
 			if (!_tx_pflex->claimShifter(_tx_shifter)) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to claim TX shifter(%d)\n", _tx_shifter);
+#endif
 				return false;
 			}
 		} else {
 			_tx_shifter = _tx_pflex->requestShifter();
 			if (_tx_shifter == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to allocate TX shifter(%d)\n", _tx_shifter);
+#endif
 				return false;
 			}
 		}
@@ -126,13 +150,17 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 		if (_rx_pflex != nullptr)  {
 			_rx_flex_pin = _rx_pflex->mapIOPinToFlexPin(_rxPin);
 			if (_rx_flex_pin == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to map RX pin %d to FlexIO\n", _rxPin);
+#endif
 				return false;
 			}
 		} else {
 			_rx_pflex = FlexIOHandler::mapIOPinToFlexIOHandler(_rxPin, _rx_flex_pin);
 			if (_rx_pflex == nullptr) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to map RX pin %d to FlexIO\n", _rxPin);
+#endif
 				return false;
 			}
 
@@ -148,19 +176,25 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 #endif		
 		if (_rx_timer <= 3) {
 			if (!_rx_pflex->claimTimer(_rx_timer)) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to claim RX timer(%d)\n", _rx_timer);
+#endif
 				return false;
 			}
 		} else {
 			_rx_timer = _rx_pflex->requestTimers();
 			if (_rx_timer == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to allocate RX timer(%d)\n", _rx_timer);
+#endif
 				return false;
 			}
 		}
 		if (_rx_shifter <= 3) {
 			if (!_rx_pflex->claimShifter(_rx_shifter)) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to claim RX shifter(%d)\n", _rx_shifter);
+#endif
 				return false;
 			}
 		} else {
@@ -169,7 +203,9 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 
 			_rx_shifter = _rx_pflex->requestShifter(dma_channel_to_avoid);
 			if (_rx_shifter == 0xff) {
+#ifdef DEBUG_FlexSerial
 				Serial.printf("FlexSerial - Failed to allocate RX shifter(%d)\n", _rx_shifter);
+#endif
 				return false;
 			}
 		}
@@ -177,13 +213,23 @@ bool FlexSerial::begin(uint32_t baud, bool inverse_logic) {
 
 #ifdef DEBUG_FlexSerial
 		Serial.printf("timer index: %d shifter index: %d mask: %x\n", _rx_timer, _rx_shifter, _rx_shifter_mask);
-#endif
 		// lets try to configure a receiver like example
 		Serial.println("Before configure flexio");
+#endif
 		p->SHIFTCFG[_rx_shifter] = FLEXIO_SHIFTCFG_SSTOP(3) | FLEXIO_SHIFTCFG_SSTART(2); //0x0000_0032;
 		p->SHIFTCTL[_rx_shifter] = FLEXIO_SHIFTCTL_TIMPOL | FLEXIO_SHIFTCTL_SMOD(1) |
 		                              FLEXIO_SHIFTCTL_TIMSEL(_rx_timer) | FLEXIO_SHIFTCTL_PINSEL(_rx_flex_pin); // 0x0080_0001;
 
+		// See if we can cmpute based off of Actual setting CCM clock settings
+		uint32_t clock_speed = _tx_pflex->computeClockRate() / 2;   // get speed divide by 
+		baud_div = clock_speed / baud;
+		if (baud_div > 256) baud_div = 256;
+		uint32_t effective_baud_above = clock_speed / baud_div;
+		uint32_t effective_baud_below = clock_speed / (baud_div + 1);
+		if ((baud_div == 256) || ((effective_baud_above - baud) <= (baud - effective_baud_below))) baud_div -= 1;
+#ifdef DEBUG_FlexSerial
+		Serial.printf("FlexSerial::begin(%u)RX - %u %u (%u %u)\n", baud, clock_speed, baud_div, effective_baud_below, effective_baud_above);
+#endif
 		p->TIMCMP[_rx_timer] = 0xf00 | baud_div; //0xF01; //0x0000_0F01;		//
 		p->TIMCFG[_rx_timer] = FLEXIO_TIMCFG_TSTART | FLEXIO_TIMCFG_TSTOP(2) |
 		                          FLEXIO_TIMCFG_TIMENA(4) | FLEXIO_TIMCFG_TIMDIS(2) |
@@ -239,7 +285,9 @@ void FlexSerial::flush(void) {
 	uint32_t start_time = millis();
 	while (_transmitting) {
 		if ((millis()-start_time) > FLUSH_TIMEOUT) {
+#ifdef DEBUG_FlexSerial
 			Serial.println("*** FlexSerial::flush Timeout ***");
+#endif
 			return;
 		}
 		yield(); // wait
@@ -299,13 +347,13 @@ int FlexSerial::available(void) {
 
 	head = _rx_buffer_head;
 	tail = _rx_buffer_tail;
-	if (head >= tail) return RX_BUFFER_SIZE - 1 - head + tail;
-	return tail - head - 1;
+	if (head >= tail) return head - tail;
+	return RX_BUFFER_SIZE - tail + head;
 }
 
 int FlexSerial::peek(void) {
 	if (_rx_buffer_head == _rx_buffer_tail) return -1;
-	return _rx_buffer[_tx_buffer_tail] ;
+	return _rx_buffer[_rx_buffer_tail] ;
 }
 
 int FlexSerial::read(void) {
@@ -344,7 +392,7 @@ bool FlexSerial::call_back (FlexIOHandler *pflex) {
 			head = _rx_buffer_head;
 			if (++head >= RX_BUFFER_SIZE) head = 0;
 			// don't save char if buffer is full...
-			if (_tx_buffer_tail != head) {
+			if (_rx_buffer_tail != head) {
 				_rx_buffer[_rx_buffer_head] = c;
 				_rx_buffer_head = head;
 			}
